@@ -11,6 +11,7 @@ import scipy.io
 import scipy.sparse
 import csv
 import h5py
+import numpy as np
 
 def get_matrix_from_h5(filename, genome):
     """
@@ -34,10 +35,18 @@ def get_matrix_from_h5(filename, genome):
         gene_names = getattr(group, 'gene_names').read()
         barcodes = getattr(group, 'barcodes').read()
         data = getattr(group, 'data').read()
+        print('data', data)
         indices = getattr(group, 'indices').read()
+        print('indices', indices)
         indptr = getattr(group, 'indptr').read()
+        print('indptr', indptr)
         shape = getattr(group, 'shape').read()
+        print('shape', shape)
         matrix = scipy.sparse.csc_matrix((data, indices, indptr), shape=shape)
+
+
+
+
         return GeneBCMatrix(gene_ids, gene_names, barcodes, matrix)
 
 
@@ -68,6 +77,24 @@ def read_sv_as_dataframe(fn, sep='\t'):
     """
     df = pd.read_table(fn, index_col=0, sep=sep)
     return df, df.columns, df.index
+
+
+def write_dataframe_as_h5(df, output_file, genome, gene_ids, gene_names,
+                          barcodes):
+    f = h5py.File(output_file, "w")
+    h5_mtx = scipy.sparse.csc_matrix(df.values)
+    h5_group = f.create_group(genome)
+
+    for attribute in ('data', 'indptr', 'shape'):
+        arr = np.array(getattr(h5_mtx, attribute))
+        ds = h5_group.create_dataset(name=attribute, data=arr, dtype='int32')
+
+    arr = np.array(getattr(h5_mtx, 'indices'))
+    h5_indices = h5_group.create_dataset(name='indices', data=arr)
+    h5_gene_ids = h5_group.create_dataset(name='genes', data=list(gene_ids))
+    h5_gene_names = h5_group.create_dataset(name='gene_names', data=list(gene_names))
+    h5_barcodes = h5_group.create_dataset(name='barcodes', data=list(barcodes))
+    f.close()
 
 
 def write_dataframe_as_matrix(df, output_file):
@@ -109,42 +136,31 @@ def convert(input_file, input_type, output_file, output_type,
     """
     if input_type == 'csv':
         if output_type == 'mtx':
-            csv2mtx(input_file, output_file)
+            print('warning: gene name+id may not be present in h5 file')
+            sv2mtx(input_file, output_file, ',')
+        elif output_type == 'h5':
+            print('warning: gene name+id may not be present in h5 file')
+            sv2h5(input_file, output_file, genome, ',')
     elif input_type == 'tsv':
         if output_type == 'mtx':
-            tsv2mtx(input_file, output_file)
+            print('warning: gene name+id may not be present in h5 file')
+            sv2mtx(input_file, output_file, '\t')
+        elif output_type == 'h5':
+            print('warning: gene name+id may not be present in h5 file')
+            sv2h5(input_file, output_file, genome, '\t')
     elif input_type == 'mtx':
         if output_type == 'tsv':
-            mtx2tsv(input_file, rows_file, columns_file, output_file)
+            mtx2sv(input_file, rows_file, columns_file, output_file, sep='\t')
         elif output_type == 'csv':
-            mtx2csv(input_file, rows_file, columns_file, output_file)
+            mtx2sv(input_file, rows_file, columns_file, output_file, sep=',')
     elif input_type == 'h5':
         if output_type == 'tsv':
-            h52tsv(input_file, output_file, genome)
-
-def csv2mtx(input_file, output_file):
-    """
-    Converts a comma separated file into an mtx file
-
-    :param input_file:
-    :param output_file:
-    :return:
-    """
-    df, cols, rows = read_sv_as_dataframe(input_file, ',')
-    write_dataframe_as_matrix(df, output_file)
-
-    o = open(output_file + '.columns', 'w')
-    for column in cols:
-        o.write(column + '\n')
-    o.close()
-
-    o = open(output_file + '.rows', 'w')
-    for row in rows:
-        o.write(row + '\n')
-    o.close()
+            h52sv(input_file, output_file, genome, '\t')
+        elif output_type == 'csv':
+            h52sv(input_file, output_file, genome, ',')
 
 
-def tsv2mtx(input_file, output_file):
+def sv2mtx(input_file, output_file, sep):
     """
     Converts a tab separated file into an mtx file
 
@@ -152,7 +168,7 @@ def tsv2mtx(input_file, output_file):
     :param output_file:
     :return:
     """
-    df, cols, rows = read_sv_as_dataframe(input_file, '\t')
+    df, cols, rows = read_sv_as_dataframe(input_file, sep)
     write_dataframe_as_matrix(df, output_file)
 
     o = open(output_file + '.columns', 'w')
@@ -166,7 +182,7 @@ def tsv2mtx(input_file, output_file):
     o.close()
 
 
-def mtx2tsv(input_file, rows_file, columns_file, output_file):
+def mtx2sv(input_file, rows_file, columns_file, output_file, sep):
     """
     Converts mtx file + rows + columns into a tab-separated file.
 
@@ -179,30 +195,45 @@ def mtx2tsv(input_file, rows_file, columns_file, output_file):
     df = read_mtx_as_dataframe(
         input_file, columns_file, rows_file
     )
-    write_dataframe_as_sv(df, output_file, sep="\t")
+    write_dataframe_as_sv(df, output_file, sep=sep)
 
 
-def mtx2csv(input_file, rows_file, columns_file, output_file):
-    """
-    Writes a csv from a mtx file
-
-    :param input_file:
-    :param rows_file:
-    :param columns_file:
-    :param output_file:
-    :return:
-    """
+def mtx2h5(input_file, output_file, columns_file, rows_file, genome):
     df = read_mtx_as_dataframe(
         input_file, columns_file, rows_file
     )
-    write_dataframe_as_sv(df, output_file, sep=",")
+    columns = [
+        row[0] for row in csv.reader(open(columns_file), delimiter="\t")
+        ]
+    rows = [
+        row[0] for row in csv.reader(open(rows_file), delimiter="\t")
+        ]
+    write_dataframe_as_h5(df, output_file, genome, rows, rows, columns)
 
 
-def tsv2h5(input_file, output_file, genome):
-    pass
+def h52mtx(input_file, output_file, genome):
+    gene_ids, gene_names, barcodes, matrix = get_matrix_from_h5(
+        input_file, genome
+    )
+
+    o = open(output_file + '.columns', 'w')
+    for i in range(0, len(gene_ids)):
+        o.write('{}\t{}\n'.format(gene_ids[i], gene_names[i]))
+    o.close()
+
+    o = open(output_file + '.rows', 'w')
+    for row in gene_ids:
+        o.write(row + '\n')
+    o.close()
 
 
-def h52tsv(input_file, output_file, genome):
+def sv2h5(input_file, output_file, genome, sep='\t'):
+    df, barcodes, gene_ids = read_sv_as_dataframe(input_file, sep=sep)
+    write_dataframe_as_h5(df, output_file, genome, gene_ids, gene_ids,
+                          barcodes)
+
+
+def h52sv(input_file, output_file, genome, sep='\t'):
     """
     Converts an h5 input file into a tab separated file.
 
@@ -213,7 +244,8 @@ def h52tsv(input_file, output_file, genome):
     """
     gene_ids, gene_names, barcodes, mat = get_matrix_from_h5(input_file, genome)
     df = pd.DataFrame(mat.todense(), columns=barcodes, index=gene_ids)
-    write_dataframe_as_sv(df, output_file, '\t')
+    write_dataframe_as_sv(df, output_file, sep)
+
 
 def main():
     """
