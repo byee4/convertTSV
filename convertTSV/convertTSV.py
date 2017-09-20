@@ -81,6 +81,17 @@ def read_sv_as_dataframe(fn, sep='\t'):
 
 def write_dataframe_as_h5(df, output_file, genome, gene_ids, gene_names,
                           barcodes):
+    """
+    Writes a pandas dataframe as an h5 file.
+
+    :param df:
+    :param output_file:
+    :param genome:
+    :param gene_ids:
+    :param gene_names:
+    :param barcodes:
+    :return:
+    """
     f = h5py.File(output_file, "w")
     h5_mtx = scipy.sparse.csc_matrix(df.values)
     h5_group = f.create_group(genome)
@@ -162,7 +173,7 @@ def convert(input_file, input_type, output_file, output_type,
 
 def sv2mtx(input_file, output_file, sep):
     """
-    Converts a tab separated file into an mtx file
+    Converts a tab/comma/sep separated file into an mtx file
 
     :param input_file:
     :param output_file:
@@ -184,7 +195,7 @@ def sv2mtx(input_file, output_file, sep):
 
 def mtx2sv(input_file, rows_file, columns_file, output_file, sep):
     """
-    Converts mtx file + rows + columns into a tab-separated file.
+    Converts mtx file + rows + columns into a tab/comma-separated file.
 
     :param input_file:
     :param rows_file:
@@ -199,6 +210,16 @@ def mtx2sv(input_file, rows_file, columns_file, output_file, sep):
 
 
 def mtx2h5(input_file, output_file, columns_file, rows_file, genome):
+    """
+    Converts mtx/mtx associated files into h5 format.
+
+    :param input_file:
+    :param output_file:
+    :param columns_file:
+    :param rows_file:
+    :param genome:
+    :return:
+    """
     df = read_mtx_as_dataframe(
         input_file, columns_file, rows_file
     )
@@ -212,22 +233,42 @@ def mtx2h5(input_file, output_file, columns_file, rows_file, genome):
 
 
 def h52mtx(input_file, output_file, genome):
+    """
+    Converts from h5 file to mtx
+
+    :param input_file:
+    :param output_file:
+    :param genome:
+    :return:
+    """
     gene_ids, gene_names, barcodes, matrix = get_matrix_from_h5(
         input_file, genome
     )
 
-    o = open(output_file + '.columns', 'w')
+    o = open(output_file + '.rows', 'w')
     for i in range(0, len(gene_ids)):
         o.write('{}\t{}\n'.format(gene_ids[i], gene_names[i]))
     o.close()
 
-    o = open(output_file + '.rows', 'w')
-    for row in gene_ids:
-        o.write(row + '\n')
+    o = open(output_file + '.columns', 'w')
+    for column in barcodes:
+        o.write(column + '\n')
     o.close()
+
+    mtx = scipy.sparse.csr_matrix(matrix)
+    scipy.io.mmwrite(output_file, mtx)
 
 
 def sv2h5(input_file, output_file, genome, sep='\t'):
+    """
+    Convert tab or csv separated files to h5.
+
+    :param input_file:
+    :param output_file:
+    :param genome:
+    :param sep:
+    :return:
+    """
     df, barcodes, gene_ids = read_sv_as_dataframe(input_file, sep=sep)
     write_dataframe_as_h5(df, output_file, genome, gene_ids, gene_ids,
                           barcodes)
