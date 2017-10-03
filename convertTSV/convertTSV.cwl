@@ -1,45 +1,43 @@
-#!/usr/bin/env cwl-runner
+#!/usr/bin/env cwltool
 
 cwlVersion: v1.0
 
 class: CommandLineTool
 
-baseCommand: [./base_module.py]
+baseCommand: [ convertTSV.py ]
+
+arguments: [ --input_type, "csv", --output_type, "h5",  --output, $(inputs.csvfile.nameroot).h5, --genome,  "mm10"]
 
 inputs:
 
-  command:
+  inFile:
     type: File
-    default: 
-      class: File
-      path: ./base_module.py
-
-  first_number:
-    type: int
     inputBinding:
-      position: 1
-      prefix: --firstnum
-    label: "first-number"
-    doc: "first number to add"
+      prefix: --input
 
-  second_number:
-    type: int
+  inFileType:
+    type: File
     inputBinding:
-      position: 2
-      prefix: --secondnum
-    label: "second-number"
-    doc: "second number to add"
+      prefix: --input_type
 
-stdout: output.txt
-# stdout: $(inputs.first_number.nameroot)_plus_$(inputs.second_number.nameroot).txt
+  outFile:
+    type: File
+    inputBinding:
+      prefix: --output
+
+  outFileType:
+    type: File
+    inputBinding:
+      prefix: --output_type
+
+  genome:
+    type: File
+    inputBinding:
+      prefix: --genome
 
 outputs:
-
-  output_file:
+  outFile:
     type: File
     outputBinding:
-      glob: output.txt # $(inputs.first_number.nameroot)_plus_$(inputs.second_number.nameroot).txt
-    label: ""
-    doc: "File containing output of the base program"
-    
+      glob: $(inputs.csvfile.nameroot).h5
 

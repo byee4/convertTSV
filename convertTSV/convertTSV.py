@@ -29,19 +29,19 @@ def get_matrix_from_h5(filename, genome):
         try:
             group = f.get_node(f.root, genome)
         except tables.NoSuchNodeError:
-            print "That genome does not exist in this file."
+            print("That genome does not exist in this file.")
             return None
         gene_ids = getattr(group, 'genes').read()
         gene_names = getattr(group, 'gene_names').read()
         barcodes = getattr(group, 'barcodes').read()
         data = getattr(group, 'data').read()
-        print('data', data)
+        # print('data', data)
         indices = getattr(group, 'indices').read()
-        print('indices', indices)
+        # print('indices', indices)
         indptr = getattr(group, 'indptr').read()
-        print('indptr', indptr)
+        # print('indptr', indptr)
         shape = getattr(group, 'shape').read()
-        print('shape', shape)
+        # print('shape', shape)
         matrix = scipy.sparse.csc_matrix((data, indices, indptr), shape=shape)
 
 
@@ -81,6 +81,34 @@ def read_sv_as_dataframe(fn, sep='\t'):
 
 def write_dataframe_as_h5(df, output_file, genome, gene_ids, gene_names,
                           barcodes):
+    h5_mtx = scipy.sparse.csc_matrix(df.values)
+
+
+    flt = tables.Filters(complevel=1)
+    with tables.open_file(output_file, 'w', filters=flt) as f:
+        f.set_node_attr(f.root, "chemistry_description", "Single Cell 3\' V2")
+        f.set_node_attr(f.root, "filetype", "matrix")
+        # f.set_node_attr(f.root, "library_ids", ['id1'])
+        # f.set_node_attr(f.root, "original_gem_groups", [1])
+        f.root._f_setattr('original_gem_groups', np.array([1]))
+        f.root._f_setattr('library_ids', np.array(['id1']))
+        try:
+            group = f.create_group(f.root, genome)
+            # for attribute in ('indices', 'indptr'):
+            #     arr = np.ndarray(getattr(h5_mtx, attribute))
+            #     f.create_carray(group, attribute, obj=arr)
+            f.create_carray(group, 'data', obj=np.asarray(h5_mtx.data, dtype=np.dtype('int32')))
+            f.create_carray(group, 'genes', obj=np.asarray(gene_ids, dtype=np.dtype('S18')))
+            f.create_carray(group, 'gene_names', obj=np.asarray(gene_names, dtype=np.dtype('S18')))
+            f.create_carray(group, 'barcodes', obj=np.asarray(barcodes, dtype=np.dtype('S18')))
+            f.create_carray(group, 'indices', obj=np.asarray(h5_mtx.indices, dtype=np.dtype('uint32')))
+            f.create_carray(group, 'indptr', obj=np.asarray(h5_mtx.indptr, dtype=np.dtype('uint32')))
+            f.create_carray(group, 'shape', obj=np.array(getattr(h5_mtx, 'shape'), dtype=np.dtype('int32')))
+        except Exception as e:
+            print('cannot write h5', e)
+
+def write_dataframe_as_h5_h5py(df, output_file, genome, gene_ids, gene_names,
+                          barcodes):
     """
     Writes a pandas dataframe as an h5 file.
 
@@ -96,15 +124,80 @@ def write_dataframe_as_h5(df, output_file, genome, gene_ids, gene_names,
     h5_mtx = scipy.sparse.csc_matrix(df.values)
     h5_group = f.create_group(genome)
 
-    for attribute in ('data', 'indptr', 'shape'):
+    h5_group.attrs['CLASS'] = 'GROUP'
+    h5_group.attrs['FILTERS'] = 65793
+    h5_group.attrs['TITLE'] = '.'
+    h5_group.attrs['VERSION'] = '1.0'
+
+    f.attrs['CLASS'] = 'GROUP'
+    f.attrs['FILTERS'] = 65793
+    f.attrs['PYTABLES_FORMAT_VERSION'] = '2.1'
+    f.attrs['TITLE'] = '.'
+    f.attrs['VERSION'] = '1.0'
+    f.attrs['chemistry_description'] = "Single Cell 3\' v2"
+    f.attrs['filetype'] = "matrix"
+    f.attrs['library_ids'] = ["expression_csv"]
+    f.attrs['original_gem_groups'] = [1]
+
+    for attribute in ('data', 'shape'):
         arr = np.array(getattr(h5_mtx, attribute))
-        ds = h5_group.create_dataset(name=attribute, data=arr, dtype='int32')
+        ds = h5_group.create_dataset(
+            name=attribute, data=arr, dtype='int32',
+            compression="gzip", compression_opts=1,
+            shuffle=True,
+        )
+        ds.attrs['CLASS'] = 'CARRAY'
+        ds.attrs['TITLE'] = '.'
+        ds.attrs['VERSION'] = '1.1'
 
     arr = np.array(getattr(h5_mtx, 'indices'))
-    h5_indices = h5_group.create_dataset(name='indices', data=arr)
-    h5_gene_ids = h5_group.create_dataset(name='genes', data=list(gene_ids))
-    h5_gene_names = h5_group.create_dataset(name='gene_names', data=list(gene_names))
-    h5_barcodes = h5_group.create_dataset(name='barcodes', data=list(barcodes))
+    h5_indices = h5_group.create_dataset(
+        name='indices', data=arr, dtype='int64',
+        compression="gzip", compression_opts=1,
+        shuffle=True,
+    )
+    h5_indices.attrs['CLASS'] = 'CARRAY'
+    h5_indices.attrs['TITLE'] = '.'
+    h5_indices.attrs['VERSION'] = '1.1'
+
+    arr = np.array(getattr(h5_mtx, 'indptr'))
+    h5_indptr = h5_group.create_dataset(
+        name='indptr', data=arr, dtype='int64',
+        compression="gzip", compression_opts=1,
+        shuffle=True,
+    )
+    h5_indptr.attrs['CLASS'] = 'CARRAY'
+    h5_indptr.attrs['TITLE'] = '.'
+    h5_indptr.attrs['VERSION'] = '1.1'
+
+
+    h5_gene_ids = h5_group.create_dataset(
+        name='genes', data=list(gene_ids),
+        compression="gzip", compression_opts=1,
+        shuffle=True,
+    )
+    h5_gene_ids.attrs['CLASS'] = 'CARRAY'
+    h5_gene_ids.attrs['TITLE'] = '.'
+    h5_gene_ids.attrs['VERSION'] = '1.1'
+
+    h5_gene_names = h5_group.create_dataset(
+        name='gene_names', data=list(gene_names),
+        compression="gzip", compression_opts=1,
+        shuffle=True,
+    )
+    h5_gene_names.attrs['CLASS'] = 'CARRAY'
+    h5_gene_names.attrs['TITLE'] = '.'
+    h5_gene_names.attrs['VERSION'] = '1.1'
+
+    h5_barcodes = h5_group.create_dataset(
+        name='barcodes', data=list(barcodes),
+        compression="gzip", compression_opts=1,
+        shuffle=True,
+    )
+    h5_barcodes.attrs['CLASS'] = 'CARRAY'
+    h5_barcodes.attrs['TITLE'] = '.'
+    h5_barcodes.attrs['VERSION'] = '1.1'
+    print("barcodes", list(barcodes))
     f.close()
 
 
